@@ -1,0 +1,30 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "brahma_ca"
+version = "0.1.0"
+description = "Cellular automata rules for acoustic signal detection and signature labelling"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=1.24",
+    "scipy>=1.10",
+]
+
+[project.optional-dependencies]
+identdynamics = [
+    "identdynamics @ git+https://github.com/energy-master/identdynamics-sdk.git#subdirectory=python",
+]
+dev = [
+    "pytest>=7",
+    "hatchling",
+]
+
+[project.urls]
+Repository = "https://github.com/vixenintelligence/brahma_ca"
+
+[tool.hatch.build.targets.wheel]
+packages = ["brahma_ca"]
