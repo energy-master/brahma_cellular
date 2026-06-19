@@ -1,4 +1,4 @@
-# brahma_ca
+# brahma_cellular
 
 Cellular automata rules for acoustic signal detection, edge finding, and signature labelling — built on NumPy and SciPy, designed to run against spectrograms from the [identdynamics](https://github.com/energy-master/identdynamics-sdk) SDK.
 
@@ -6,17 +6,17 @@ Cellular automata rules for acoustic signal detection, edge finding, and signatu
 
 ```bash
 # From GitHub
-pip install "brahma_ca[identdynamics] @ git+https://github.com/vixenintelligence/brahma_ca.git"
+pip install "brahma_cellular[identdynamics] @ git+https://github.com/vixenintelligence/brahma_cellular.git"
 
 # Without identdynamics (bring your own STFT)
-pip install "brahma_ca @ git+https://github.com/vixenintelligence/brahma_ca.git"
+pip install "brahma_cellular @ git+https://github.com/vixenintelligence/brahma_cellular.git"
 ```
 
 ## Quick start
 
 ```python
 from identdynamics import Client
-from brahma_ca import (
+from brahma_cellular import (
     Pipeline,
     EdgeDetectionRule, AnomalyDetectionRule, GroupingRule, WolframRule,
 )
@@ -60,7 +60,7 @@ rule = EdgeDetectionRule(onset_only=True) | GroupingRule(min_cells=10)
 
 ```python
 import numpy as np
-from brahma_ca import CAState, CAEngine, Detector, EdgeDetectionRule
+from brahma_cellular import CAState, CAEngine, Detector, EdgeDetectionRule
 
 signal = np.frombuffer(open("clip.raw", "rb").read(), dtype=np.float32).astype(np.float64)
 ca = CAState.from_signal(signal, sample_rate=44100)   # requires identdynamics for STFT
@@ -96,7 +96,7 @@ print(detector.detections(ca))
 Custom bands:
 
 ```python
-from brahma_ca import Labeler
+from brahma_cellular import Labeler
 labeler = Labeler(bands={"engine": (80, 300), "propeller": (300, 1200)})
 dets = labeler.label_detections(ca, detections)
 ```

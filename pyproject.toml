@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "brahma_ca"
+name = "brahma_cellular"
 version = "0.1.0"
 description = "Cellular automata rules for acoustic signal detection and signature labelling"
 readme = "README.md"
@@ -24,7 +24,7 @@ dev = [
 ]
 
 [project.urls]
-Repository = "https://github.com/vixenintelligence/brahma_ca"
+Repository = "https://github.com/vixenintelligence/brahma_cellular"
 
 [tool.hatch.build.targets.wheel]
-packages = ["brahma_ca"]
+packages = ["brahma_cellular"]
