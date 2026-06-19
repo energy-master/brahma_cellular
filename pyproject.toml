@@ -1,6 +1,6 @@
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "brahma_cellular"
@@ -24,7 +24,8 @@ dev = [
 ]
 
 [project.urls]
-Repository = "https://github.com/vixenintelligence/brahma_cellular"
+Repository = "https://github.com/energy-master/brahma_cellular"
 
-[tool.hatch.build.targets.wheel]
-packages = ["brahma_cellular"]
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["brahma_cellular*"]

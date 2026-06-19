@@ -6,10 +6,10 @@ Cellular automata rules for acoustic signal detection, edge finding, and signatu
 
 ```bash
 # From GitHub
-pip install "brahma_cellular[identdynamics] @ git+https://github.com/vixenintelligence/brahma_cellular.git"
+pip install "brahma_cellular[identdynamics] @ git+https://github.com/energy-master/brahma_cellular.git"
 
 # Without identdynamics (bring your own STFT)
-pip install "brahma_cellular @ git+https://github.com/vixenintelligence/brahma_cellular.git"
+pip install "brahma_cellular @ git+https://github.com/energy-master/brahma_cellular.git"
 ```
 
 ## Quick start
