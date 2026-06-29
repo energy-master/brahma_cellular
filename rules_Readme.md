@@ -4,6 +4,96 @@ A field guide to every rule, neighbourhood type, and update strategy in the libr
 
 ---
 
+## How the CA Algorithm Works
+
+A cellular automaton treats a 2D grid of numbers as a population of cells. Each cell holds a value and, at each time step, that value is recomputed from the cell's own current value and the values of its neighbours. Apply that update simultaneously to every cell and you have one CA generation.
+
+In Brahma Cellular the grid is a spectrogram: rows are time frames, columns are frequency bins, and each cell's value is the log-compressed magnitude at that (time, frequency) coordinate. The CA evolves over this grid to highlight structure — edges, anomalies, clusters — that is hard to see in the raw numbers.
+
+### The CA matrix: initial values
+
+When a `CAState` is built from audio (via `CAState.from_fourier` or `CAState.from_signal`), two arrays are created:
+
+```
+ca.grid   — shape (frames, bins), float64
+            The log1p-compressed STFT magnitudes. This is read-only input;
+            rules read from it but do not modify it.
+
+ca.state  — shape (frames, bins), float64, initialised to all zeros
+            The CA activation layer. Rules write their output here.
+            Values are normalised to [0, 1].
+```
+
+Before the first rule runs, `CAEngine` optionally binarises the grid into `ca.state`:
+
+```python
+threshold = percentile(ca.grid, threshold_pct)   # default: 80th percentile
+ca.state  = (ca.grid > threshold).astype(float)  # 1.0 where loud, 0.0 elsewhere
+```
+
+This gives the first rule a clean binary "active / inactive" map to work with. Rules that read directly from `ca.grid` (like `EdgeDetectionRule`) skip this and see the full continuous magnitudes instead.
+
+### One update step — worked example with SpectralFluxRule
+
+Suppose `ca.grid` is a tiny 4-frame × 4-bin spectrogram (log magnitudes):
+
+```
+         bin0  bin1  bin2  bin3
+frame 0 [ 0.1   0.2   0.1   0.0 ]
+frame 1 [ 0.1   0.8   0.1   0.0 ]   ← energy spike in bin1
+frame 2 [ 0.1   0.7   0.5   0.0 ]
+frame 3 [ 0.1   0.3   0.2   0.0 ]
+```
+
+**Step 1 — compute flux** (difference from previous frame, per bin):
+
+```
+         bin0  bin1  bin2  bin3
+frame 0 [ 0.0   0.0   0.0   0.0 ]   (first frame: no previous, set to 0)
+frame 1 [ 0.0  +0.6   0.0   0.0 ]   ← onset: bin1 jumped by 0.6
+frame 2 [ 0.0  -0.1  +0.4   0.0 ]   ← bin2 rose, bin1 fell
+frame 3 [ 0.0  -0.4  -0.3   0.0 ]   ← both falling
+```
+
+**Step 2 — rectify** (clip negatives to 0, keeping only onsets):
+
+```
+frame 1 [ 0.0  +0.6   0.0   0.0 ]
+frame 2 [ 0.0   0.0  +0.4   0.0 ]
+frame 3 [ 0.0   0.0   0.0   0.0 ]
+```
+
+**Step 3 — threshold** at 85th percentile of the rectified values. Only the two non-zero cells survive; the rest become 0.
+
+**Step 4 — normalise** by dividing by the maximum value (0.6):
+
+```
+ca.state after update:
+         bin0  bin1  bin2  bin3
+frame 0 [ 0.0   0.0   0.0   0.0 ]
+frame 1 [ 0.0   1.0   0.0   0.0 ]   ← strong onset marked
+frame 2 [ 0.0   0.0   0.67  0.0 ]   ← weaker onset marked
+frame 3 [ 0.0   0.0   0.0   0.0 ]
+```
+
+Every cell has been updated in one vectorised pass — no Python loop over cells. `ca.step` increments by 1. If `steps > 1`, this updated `ca.state` feeds directly into the next iteration.
+
+### Chaining rules
+
+When rules are chained with `|`, each rule's output `ca.state` becomes the next rule's input. Auxiliary arrays (`ca.edge_mask`, `ca.anomaly`, `ca.labels`) are written alongside `ca.state` so that later rules can gate on earlier results:
+
+```
+audio signal
+    → ca.grid  (fixed, read-only log spectrogram)
+    → ca.state (zeros)
+        → EdgeDetectionRule  writes ca.state + ca.edge_mask
+        → AnomalyDetectionRule  reads ca.grid, writes ca.state gated by ca.edge_mask
+        → GroupingRule  reads ca.state, writes ca.labels
+        → Detector  reads ca.state + ca.labels → events with timestamps
+```
+
+---
+
 ## Neighbourhood Types
 
 | Name | Shape | Used By | Description |
@@ -33,6 +123,23 @@ Detects temporal onsets/offsets and spectral transitions by computing gradient m
 
 **Neighbourhood:** 2D gradient kernel (finite differences along each axis independently).
 
+**How it finds edges in the spectrogram:**
+
+An edge in the spectrogram is any place where magnitude changes sharply — either across time (an onset or offset) or across frequency (a spectral boundary between a tone and silence). The rule computes two finite-difference arrays from `ca.grid`:
+
+```python
+dt = ca.grid - roll(ca.grid, 1, axis=0)   # frame[t] − frame[t−1], per bin
+df = ca.grid - roll(ca.grid, 1, axis=1)   # bin[b] − bin[b−1], per frame
+```
+
+`dt` is large wherever energy jumps or drops between consecutive frames — the signature of an onset or offset. `df` is large wherever energy jumps between adjacent frequency bins — the signature of a spectral boundary (e.g., the edge of a harmonic or a band of noise). Both are combined by weighted magnitude:
+
+```python
+grad = temporal_weight * |dt| + spectral_weight * |df|
+```
+
+Because both are absolute values, `grad` is high at any sharp change, regardless of direction. The result is thresholded at a percentile so only the most prominent transitions survive. Setting `onset_only=True` adds a sign check (`dt > 0`) so only rising energy is kept. The output written to `ca.state` is the normalised gradient magnitude — stronger edges have values closer to 1.
+
 **Good for:** Fast onset/offset detection; feeding an edge mask into anomaly or grouping rules; pre-conditioning the state for any rule that benefits from knowing where energy changes sharply.
 
 ---
@@ -50,6 +157,16 @@ Computes the per-bin energy difference between consecutive frames (`diff` along 
 | `write_mask` | `True` | Stores binary mask in `ca.edge_mask` |
 
 **Neighbourhood:** Single-frame look-back (1D along time axis).
+
+**How it finds edges in the spectrogram:**
+
+Spectral flux is the simplest possible edge detector: for each frequency bin independently, subtract the previous frame's magnitude from the current one:
+
+```python
+flux[t, b] = ca.grid[t, b] − ca.grid[t−1, b]
+```
+
+A positive value means energy in that bin increased this frame — an onset. A negative value means it decreased — an offset. With `rectify=True` the negative values are clipped to zero so only onsets remain. Unlike `EdgeDetectionRule`, which blends temporal and spectral gradients into a 2D magnitude, SpectralFluxRule looks purely along the time axis one bin at a time. This makes it more sensitive to sharp per-bin jumps (e.g., a single harmonic appearing suddenly) and less sensitive to smooth spectral slopes. The threshold percentile then discards the low-flux baseline, leaving only the bins and frames where energy changed most dramatically.
 
 **Good for:** Onset detection when frame-by-frame energy jumps matter more than sustained gradient; faster and simpler than `EdgeDetectionRule`; best when audio is already fairly clean.
 
